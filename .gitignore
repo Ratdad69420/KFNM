@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-build/
+.cursor/
+*.log
+.DS_Store
+Thumbs.db
+overlay-*.png
+temp/

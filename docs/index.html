@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Watermark Studio</title>
+    <link rel="icon" href="icon.png" type="image/png" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <h1>Watermark Studio</h1>
+        <div class="top-actions">
+          <button id="exportBtn" class="btn primary" type="button" disabled>Export all</button>
+        </div>
+      </header>
+      <p class="note">Runs in this browser. Files stay on your device. Export all downloads every queued photo and video into your Downloads folder. If the browser asks, allow multiple downloads.</p>
+      <input id="photoInput" class="hidden" type="file" accept="image/*" multiple />
+      <input id="videoInput" class="hidden" type="file" accept="video/*" multiple />
+
+      <main class="layout">
+        <aside id="filePanel" class="files">
+          <p class="file-drop-hint">Drop photos or videos here. They split into the lists below.</p>
+          <section class="queue">
+            <header>
+              <strong>Photos</strong>
+              <button id="addPhotosBtn" class="btn" type="button">Add</button>
+            </header>
+            <ul id="photoList" class="file-list"></ul>
+          </section>
+          <section class="queue">
+            <header>
+              <strong>Videos</strong>
+              <button id="addVideosBtn" class="btn" type="button">Add</button>
+            </header>
+            <ul id="videoList" class="file-list"></ul>
+          </section>
+        </aside>
+
+        <section class="stage-panel">
+          <div id="stage" class="stage">
+            <div id="emptyState" class="empty">Add photos or videos from the side.</div>
+            <img id="previewImage" class="media hidden" alt="Preview" />
+            <video id="previewVideo" class="media hidden" muted loop playsinline></video>
+            <canvas id="overlay" class="overlay"></canvas>
+            <button id="prevBtn" class="nav-btn prev hidden" type="button" aria-label="Previous">‹</button>
+            <button id="nextBtn" class="nav-btn next hidden" type="button" aria-label="Next">›</button>
+          </div>
+          <div class="stage-meta">
+            <span id="fileLabel">No file</span>
+            <span id="navLabel"></span>
+            <span id="statusLabel"></span>
+          </div>
+        </section>
+
+        <aside class="controls">
+          <p id="settingsLabel" class="settings-label">Photo watermark</p>
+          <fieldset>
+            <legend>Text</legend>
+            <div id="textList" class="text-list">
+              <div class="text-row">
+                <input type="text" maxlength="120" value="SAMPLE" aria-label="Watermark text" />
+                <button type="button" class="btn text-remove" disabled>Remove</button>
+              </div>
+            </div>
+            <button id="addTextBtn" class="btn" type="button">Add text</button>
+            <p class="hint">Repeat tiles every line. Bounce uses the first line.</p>
+          </fieldset>
+
+          <fieldset>
+            <legend>Appearance</legend>
+            <label class="field">
+              <span>Size <em id="sizeValue">48</em></span>
+              <input id="sizeInput" type="range" min="12" max="220" value="48" />
+            </label>
+            <div class="row">
+              <label class="field">
+                <span>Color</span>
+                <input id="colorInput" type="color" value="#ffffff" />
+              </label>
+              <label class="field grow">
+                <span>Opacity <em id="opacityValue">35%</em></span>
+                <input id="opacityInput" type="range" min="8" max="100" value="35" />
+              </label>
+            </div>
+            <label class="check">
+              <input id="outlineInput" type="checkbox" checked />
+              <span>Dark outline</span>
+            </label>
+          </fieldset>
+
+          <fieldset>
+            <legend>Layout</legend>
+            <label class="choice">
+              <input type="radio" name="layout" value="single" />
+              <span>Single</span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="layout" value="pattern" checked />
+              <span>Repeat across the frame</span>
+            </label>
+            <div id="singleOptions" class="subpanel hidden">
+              <label class="field">
+                <span>Position</span>
+                <select id="positionSelect">
+                  <option value="center">Center</option>
+                  <option value="top-left">Top left</option>
+                  <option value="top-right">Top right</option>
+                  <option value="bottom-left">Bottom left</option>
+                  <option value="bottom-right">Bottom right</option>
+                </select>
+              </label>
+            </div>
+            <div id="patternOptions" class="subpanel">
+              <label class="field">
+                <span>Spacing <em id="spacingValue">120</em></span>
+                <input id="spacingInput" type="range" min="20" max="280" value="120" />
+              </label>
+              <label class="field">
+                <span>Angle <em id="angleValue">-28°</em></span>
+                <input id="angleInput" type="range" min="-60" max="60" value="-28" />
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset id="videoOptions" class="disabled">
+            <legend>Video</legend>
+            <label class="choice">
+              <input type="radio" name="motion" value="static" checked />
+              <span>Static</span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="motion" value="bounce" />
+              <span>Bounce</span>
+            </label>
+            <label id="speedField" class="field hidden">
+              <span>Speed <em id="speedValue">160</em></span>
+              <input id="speedInput" type="range" min="60" max="360" value="160" />
+            </label>
+            <p id="motionHint" class="hint">Repeat tiles on videos. Bounce is one moving mark. Export records the clip in this tab.</p>
+          </fieldset>
+
+          <div class="progress-wrap hidden" id="progressWrap">
+            <div class="progress-bar"><i id="progressBar"></i></div>
+            <span id="progressLabel">Exporting…</span>
+          </div>
+        </aside>
+      </main>
+    </div>
+    <script src="watermark.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

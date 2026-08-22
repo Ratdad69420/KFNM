@@ -1,0 +1,66 @@
+{
+  "name": "watermark-studio",
+  "productName": "Watermark Studio",
+  "version": "1.5.0",
+  "description": "Watermark images and videos with tiled patterns and bouncing text.",
+  "main": "main.js",
+  "author": "Watermark Studio",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win portable"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0",
+    "ffprobe-static": "^3.1.0"
+  },
+  "devDependencies": {
+    "electron": "^37.2.4",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.watermarkstudio.app",
+    "productName": "Watermark Studio",
+    "copyright": "Copyright © Watermark Studio",
+    "directories": {
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "build/icon.png",
+      "build/icon.ico"
+    ],
+    "asarUnpack": [
+      "**/ffmpeg-static/**",
+      "**/ffprobe-static/**"
+    ],
+    "extraResources": [
+      {
+        "from": "node_modules/ffmpeg-static/ffmpeg.exe",
+        "to": "ffmpeg.exe"
+      },
+      {
+        "from": "node_modules/ffprobe-static/bin/win32/x64/ffprobe.exe",
+        "to": "ffprobe.exe"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "executableName": "WatermarkStudio",
+      "requestedExecutionLevel": "asInvoker",
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "WatermarkStudio.exe"
+    }
+  }
+}
