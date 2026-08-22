@@ -674,6 +674,10 @@ function bounceAtTime(t, speed, width, height, box) {
 
 function waitMedia(el, eventName) {
   return new Promise((resolve, reject) => {
+    if (eventName === "loadeddata" && el.readyState >= 2) {
+      resolve();
+      return;
+    }
     const ok = () => {
       el.removeEventListener(eventName, ok);
       el.removeEventListener("error", bad);
@@ -689,6 +693,16 @@ function waitMedia(el, eventName) {
   });
 }
 
+function startRecorder(stream, mime) {
+  try {
+    return mime
+      ? new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8000000 })
+      : new MediaRecorder(stream);
+  } catch {
+    return new MediaRecorder(stream);
+  }
+}
+
 async function exportVideoItem(item, settings, usedNames) {
   if (typeof MediaRecorder === "undefined" || typeof HTMLCanvasElement.prototype.captureStream !== "function") {
     throw new Error("This browser cannot record video in the page.");
@@ -700,8 +714,10 @@ async function exportVideoItem(item, settings, usedNames) {
   video.playsInline = true;
   video.muted = true;
   video.preload = "auto";
-  video.src = item.url;
+  video.src = item.url || (item.file ? URL.createObjectURL(item.file) : "");
+  if (!video.src) throw new Error("This video has no data to export.");
   await waitMedia(video, "loadeddata");
+  if (video.readyState < 2) await waitMedia(video, "canplay");
   const width = video.videoWidth;
   const height = video.videoHeight;
   if (!width || !height) throw new Error("Video has no size.");
@@ -709,21 +725,13 @@ async function exportVideoItem(item, settings, usedNames) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
-  const ctx = canvas.getContext("2d", { alpha: false });
-  const canvasStream = canvas.captureStream(30);
-  try {
-    const grab = video.captureStream || video.mozCaptureStream;
-    if (grab) {
-      grab.call(video).getAudioTracks().forEach((track) => canvasStream.addTrack(track));
-    }
-  } catch {
-    // silent video is fine
-  }
+  const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
+  if (!ctx) throw new Error("Could not create a drawing surface.");
+  ctx.drawImage(video, 0, 0, width, height);
 
+  const canvasStream = canvas.captureStream(30);
   const mime = pickRecorderMime();
-  const rec = mime
-    ? new MediaRecorder(canvasStream, { mimeType: mime, videoBitsPerSecond: 8000000 })
-    : new MediaRecorder(canvasStream);
+  let rec = startRecorder(canvasStream, mime);
   const chunks = [];
   rec.addEventListener("dataavailable", (event) => {
     if (event.data && event.data.size) chunks.push(event.data);
@@ -752,12 +760,29 @@ async function exportVideoItem(item, settings, usedNames) {
     if (!video.ended) requestAnimationFrame(drawFrame);
   };
 
-  rec.start(250);
-  await video.play();
+  try {
+    rec.start(250);
+  } catch (error) {
+    throw new Error(error?.message || "Could not start video recording.");
+  }
+  try {
+    video.currentTime = 0;
+    await video.play();
+  } catch {
+    throw new Error("Could not play this video to record it.");
+  }
   drawFrame();
-  await new Promise((resolve) => {
-    video.addEventListener("ended", resolve, { once: true });
-  });
+  const waitMs = Number.isFinite(video.duration) && video.duration > 0 ? video.duration * 1000 + 2000 : 180000;
+  await Promise.race([
+    new Promise((resolve) => {
+      if (video.ended) {
+        resolve();
+        return;
+      }
+      video.addEventListener("ended", resolve, { once: true });
+    }),
+    sleep(waitMs),
+  ]);
   drawing = false;
   ctx.drawImage(video, 0, 0, width, height);
   drawWatermark(
@@ -769,7 +794,7 @@ async function exportVideoItem(item, settings, usedNames) {
       ? bounceAtTime(video.duration || video.currentTime, settings.bounceSpeed, width, height, measureText(ctx, watermarkTexts(settings)[0], settings))
       : { mode: "static" }
   );
-  rec.stop();
+  if (rec.state === "recording") rec.stop();
   await stopped;
   canvasStream.getTracks().forEach((track) => track.stop());
   video.pause();

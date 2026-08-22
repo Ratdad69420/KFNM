@@ -554,13 +554,15 @@ async function exportPhoto(item, settings, usedNames) {
 async function exportVideoItem(item, settings, usedNames) {
   item.status = "Working";
   renderLists();
+  if (!item.path) throw new Error("This video has no file path to export.");
   const info = await window.watermarkApi.probeVideo(item.path);
   const bounce = settings.layout === "single" && settings.motion === "bounce";
   const overlayCanvas =
     settings.layout === "pattern"
       ? createOverlayCanvas(info.width, info.height, settings, { mode: "static" })
       : createTextStampCanvas(settings);
-  const overlayPng = await canvasPngBuffer(overlayCanvas);
+  const overlayPng = new Uint8Array(await canvasPngBuffer(overlayCanvas));
+  if (overlayPng.length < 32) throw new Error("Could not build the watermark overlay.");
   const outName = uniqueName(suggestedOutName(item), usedNames);
   const outPath = await window.watermarkApi.uniqueDownloadPath(outName);
   const stop = window.watermarkApi.onVideoProgress((payload) => {
@@ -581,6 +583,8 @@ async function exportVideoItem(item, settings, usedNames) {
       bounceSpeed: settings.bounceSpeed,
       hasAudio: Boolean(info.hasAudio),
     });
+  } catch (error) {
+    throw new Error(error?.message || "Video export failed.");
   } finally {
     stop();
   }

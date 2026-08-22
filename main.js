@@ -16,11 +16,16 @@ function unpackPath(binPath) {
 }
 
 function resolveBinary(packagedName, modulePath) {
-  if (app.isPackaged) {
-    const bundled = path.join(process.resourcesPath, packagedName);
-    if (fs.existsSync(bundled)) return bundled;
+  const extra = path.join(process.resourcesPath || "", packagedName);
+  const unpackedModule = unpackPath(modulePath);
+  const candidates = app.isPackaged
+    ? [extra, unpackedModule, modulePath]
+    : [unpackedModule, modulePath, extra];
+  const found = candidates.find((candidate) => candidate && fs.existsSync(candidate));
+  if (!found) {
+    throw new Error(`${packagedName} is missing. Reinstall Watermark Studio.`);
   }
-  return unpackPath(modulePath);
+  return found;
 }
 
 function ffmpegPath() {
@@ -194,7 +199,7 @@ function runProcess(bin, args) {
     child.on("error", reject);
     child.on("close", (code) => {
       if (code === 0) resolve({ stdout, stderr });
-      else reject(new Error(stderr.trim() || `Process exited with code ${code}`));
+      else reject(new Error(shortFfmpegError(stderr, code)));
     });
   });
 }
@@ -213,12 +218,27 @@ async function probeVideo(filePath) {
   const video = (info.streams || []).find((stream) => stream.codec_type === "video");
   const audio = (info.streams || []).find((stream) => stream.codec_type === "audio");
   if (!video) throw new Error("No video stream found.");
+  const width = Number(video.width) || 0;
+  const height = Number(video.height) || 0;
+  if (!width || !height) throw new Error("Could not read this video's size.");
   return {
-    width: Number(video.width) || 0,
-    height: Number(video.height) || 0,
+    width,
+    height,
     duration: Number(info.format?.duration || video.duration || 0),
     hasAudio: Boolean(audio),
   };
+}
+
+function shortFfmpegError(stderr, code) {
+  const lines = String(stderr || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const useful = [...lines]
+    .reverse()
+    .find((line) => /error|invalid|failed|divisible|not found|no such|denied|empty/i.test(line));
+  const text = useful || lines[lines.length - 1] || `FFmpeg exited with code ${code}`;
+  return text.slice(0, 240);
 }
 
 function bounceFilter(speed) {
@@ -240,9 +260,11 @@ function staticOverlayFilter(position) {
 }
 
 function overlayFilter(layout, motion, position, bounceSpeed) {
-  if (layout === "pattern") return "overlay=0:0";
-  if (motion === "bounce") return bounceFilter(bounceSpeed);
-  return staticOverlayFilter(position);
+  let overlay;
+  if (layout === "pattern") overlay = "[0:v][1:v]overlay=0:0:format=auto";
+  else if (motion === "bounce") overlay = `[0:v][1:v]${bounceFilter(bounceSpeed)}:format=auto`;
+  else overlay = `[0:v][1:v]${staticOverlayFilter(position)}:format=auto`;
+  return `${overlay},scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p[v]`;
 }
 
 function encodeArgs(inputPath, overlayPath, outputPath, filter, audioMode) {
@@ -254,6 +276,8 @@ function encodeArgs(inputPath, overlayPath, outputPath, filter, audioMode) {
     overlayPath,
     "-filter_complex",
     filter,
+    "-map",
+    "[v]",
     "-c:v",
     "libx264",
     "-preset",
@@ -265,8 +289,8 @@ function encodeArgs(inputPath, overlayPath, outputPath, filter, audioMode) {
     "-movflags",
     "+faststart",
   ];
-  if (audioMode === "copy") args.push("-c:a", "copy");
-  else if (audioMode === "aac") args.push("-c:a", "aac", "-b:a", "192k");
+  if (audioMode === "copy") args.push("-map", "0:a?", "-c:a", "copy");
+  else if (audioMode === "aac") args.push("-map", "0:a?", "-c:a", "aac", "-b:a", "192k");
   else args.push("-an");
   args.push("-progress", "pipe:1", "-nostats", outputPath);
   return args;
@@ -292,7 +316,7 @@ function runFfmpegEncode(event, args) {
     child.on("error", reject);
     child.on("close", (code) => {
       if (code === 0) resolve();
-      else reject(new Error(stderr.trim() || `FFmpeg exited with code ${code}`));
+      else reject(new Error(shortFfmpegError(stderr, code)));
     });
   });
 }
@@ -309,16 +333,28 @@ async function exportVideo(event, options) {
     hasAudio,
   } = options;
 
+  if (!inputPath || !fs.existsSync(inputPath)) {
+    throw new Error("That video file could not be found.");
+  }
+
+  const png = toNodeBuffer(overlayPng);
+  if (png.length < 32) throw new Error("Watermark overlay was empty.");
+
   const tempOverlay = path.join(os.tmpdir(), `watermark-overlay-${Date.now()}.png`);
-  fs.writeFileSync(tempOverlay, Buffer.from(overlayPng));
+  fs.writeFileSync(tempOverlay, png);
 
   const filter = overlayFilter(layout, motion, position, bounceSpeed);
-  const audioModes = hasAudio ? ["copy", "aac"] : ["none"];
+  const audioModes = hasAudio ? ["copy", "aac", "none"] : ["none"];
 
   try {
     let lastError = null;
     for (const audioMode of audioModes) {
       try {
+        try {
+          if (outputPath && fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+        } catch {
+          // retry on a clean file
+        }
         await runFfmpegEncode(
           event,
           encodeArgs(inputPath, tempOverlay, outputPath, filter, audioMode)
@@ -327,9 +363,17 @@ async function exportVideo(event, options) {
         break;
       } catch (error) {
         lastError = error;
+        try {
+          if (outputPath && fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+        } catch {
+          // ignore leftover cleanup
+        }
       }
     }
     if (lastError) throw lastError;
+    if (!outputPath || !fs.existsSync(outputPath) || fs.statSync(outputPath).size < 32) {
+      throw new Error("FFmpeg finished but the video file was empty.");
+    }
     return { outputPath };
   } finally {
     try {
